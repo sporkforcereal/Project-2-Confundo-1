@@ -11,6 +11,7 @@ SCRIPT
 
 Vagrant.configure(2) do |config|
   config.vm.box = "generic/ubuntu1604"
+  config.vm.synced_folder ".", "/vagrant"
   config.vm.provision "shell", inline: $INSTALL_BASE
 
   # config.vm.provider "virtualbox" do |vb|
