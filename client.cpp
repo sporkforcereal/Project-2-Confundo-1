@@ -10,18 +10,14 @@
 #include <signal.h>
 #include "packet.h"
 #include <iostream>
+#include <fstream>
+
 
 void error (char *msg);
 void sig_quit_handler(int s);
 void sig_term_handler(int s);
 
-/*
-std::ifstream::pos_type filesize(const char* filename)
-{
-    std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
-    return in.tellg();
-}
-*/
+
 
 //create the packet from the buffer
 //set the sequence and acknowledgment number based on the number of bytes
@@ -80,6 +76,7 @@ int main (int argc, char *argv[]){
   signal(SIGTERM, sig_term_handler);
 
   int port = atoi(argv[2]);
+  std::string file_name = argv[3]; //file_name is the file we are sending over
 
   int sock, n;
   //int length;
@@ -89,7 +86,7 @@ int main (int argc, char *argv[]){
   struct sockaddr_in server;
   struct sockaddr_in from;
   struct hostent *hp;
-  char buffer[256];
+  char buffer[512];
 
 
   if (argc < 3){
@@ -120,22 +117,70 @@ int main (int argc, char *argv[]){
   server.sin_port=htons(atoi(argv[2]));
   length = sizeof(struct sockaddr_in);
 
-  printf("PLEASE ENTER THE MESSAGE: ");
 
-  bzero(buffer, 256);
-  fgets(buffer, 255, stdin);
-  n = sendto(sock,buffer,strlen(buffer),0,(struct sockaddr *) &server,length);
+
+  //WE READ THE FILE, PUT IN THE THE PACKET, SEND 
+  //the 512th byte in the buffer is set to be \0, only read 511
+  std::ifstream input(file_name, std::ios::binary);
+
+  if (!input.is_open())
+    {
+        std::cerr << "ERROR: cannot open the file" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+  while (true){
+    memset(buffer, '\0', sizeof(buffer));
+    int bytes_send = input.read(buffer, sizeof(buffer)).gcount(); //buffer contains the contents within the txt file
+    if (bytes_send == 0){
+      break;
+    }
+
+    
+    std::cerr << buffer;  //so buffer has the content in text file
+    //sends the first 512
+    n = sendto(sock, buffer,strlen(buffer),0,(struct sockaddr *) &server, length);
+    if (n < 0){
+     perror("SENDTO...");
+    }
+    
+    //receves what the server sends back
+    n = recvfrom(sock,buffer,512,0,(struct sockaddr *) &from, &length);
+    
+    if (n < 0){
+     perror("RECVFROM...");
+    }
+    
+
+
+
+  }
+  input.close();
+
+
   
-  if (n < 0){
-      perror("SENDTO...");
-    }
-  n = recvfrom(sock,buffer,256,0,(struct sockaddr *) &from, &length);
-  if (n < 0){
-      perror("RECVFROM...");
-    }
+  //SENDING MESSAGE 
+  /*
+  while (1){
+    printf("PLEASE ENTER THE MESSAGE: ");
 
-  write(1, "Got an ack: ", 12);
-  write(1, buffer, n);
+    bzero(buffer, 512);
+    fgets(buffer, 512, stdin);
+    n = sendto(sock,buffer,strlen(buffer),0,(struct sockaddr *) &server,length);
+    
+    if (n < 0){
+        perror("SENDTO...");
+      }
+    n = recvfrom(sock,buffer,256,0,(struct sockaddr *) &from, &length);
+    if (n < 0){
+        perror("RECVFROM...");
+      }
+
+    write(1, "Got an ack: ", 12);
+    write(1, buffer, n);
+  }
+  */
+  
+
 }
 
 
@@ -155,4 +200,5 @@ void sig_term_handler(int s)
 {
     exit(0);
 }
+
 
