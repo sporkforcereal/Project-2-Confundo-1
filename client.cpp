@@ -15,8 +15,8 @@
 struct Connection {
 
 	FILE* fd;
-	uint16_t id;
-	uint32_t client_seq_num;
+	uint16_t id = 1;
+	uint32_t client_seq_num = 12345;
 	uint32_t server_seq_num;
 	uint32_t cwnd;
 	uint32_t ssthresh;
@@ -80,6 +80,8 @@ void Packet::to_uint32_string(uint8_t (&buf)[MAX_PACKET_SIZE]) {
 }
 
 
+
+
 //MAIN
 int main (int argc, char *argv[]){
 
@@ -98,7 +100,7 @@ int main (int argc, char *argv[]){
   struct sockaddr_in from;
   struct hostent *hp;
   //char buffer[512];
-  uint8_t buffer[512];
+  uint8_t buffer[524];
 
   if (argc < 3){
     fprintf(stderr, "ERROR, NOT ENOUGH ARGUMENT. IT SHOULD BE:\n");
@@ -144,50 +146,131 @@ int main (int argc, char *argv[]){
     }
 
 
-  //std::cerr << "LINE 144" << std::endl;
+  
+
+
+  //initializing args
+  args.seq_num = c.client_seq_num;
+  args.ack_num = 0;
+  args.flags = 2;
+
   //THIS PART ACTUALLY MANAGES ACK, SYNC, AND SENDS THE MESSAGE, ALSO WAITS FOR ACK  
   while (1){
+    startsending:
     uint8_t read_buff [MAX_PAYLOAD_SIZE];
     uint8_t send_pack [MAX_PACKET_SIZE];
-    std::cerr << "before reading the file" << std::endl;
+    //std::cerr << "before reading the file" << std::endl;
+
     int read_bytes = fread(read_buff, sizeof(char), MAX_PAYLOAD_SIZE, file);//it was c.fd for the last parameter
-    std::cerr << "HOW MANY BYTES I READ IN" << std::endl;
-    std::cerr << read_bytes << std::endl;
+    std::cerr << read_buff << std::endl;
+    std::cerr << "HOW MANY BYTES I READ IN FROM THE FILE: " << read_bytes << std::endl;
+
+
     if (read_bytes < 0) {
-      perror("reading payload file");
+      std::cerr << "no bytes were read from the file, so it is now done" << std::endl;
 			//report_error("reading payload file", true, 1);
       break;
 			}
 		if (read_bytes == 0) {
+      std::cerr << "no bytes were read from the file, so it is now done2" << std::endl;
 			break; // No payload to send
 		}
+
+  
+
+    //if this is our first time sending, we will send without the payload
+    Packet p = Packet(args);
+    //first time sending
+    if (args.flags == 2){//starting with the flag 2, we will start connecting
+      args.size = 12 + read_bytes;
+      p = Packet(args);
+      p.to_uint32_string(send_pack); //so now send_pack is what we're sending
+      if (sendto(sock, send_pack, p.size(), 0, (struct sockaddr *) &(server), length) < 0){ //SENDING IT HERE
+        perror("sending payload packet to server");
+      }
+    }
+
+    std::cerr << "BEFORE IT RECEIVES"  << std::endl;
+    memset(buffer, '\0', sizeof(buffer));
+    //now we have to wait to receive the handshake confirmation
+    while (1){
+      n = recvfrom(sock,buffer,524,0,(struct sockaddr *) &from, &length);
+      std::cerr << "AFTER IT RECEIVES"  << std::endl;
+      break;
+    }
+    n = recvfrom(sock,buffer,524,0,(struct sockaddr *) &from, &length);
+    std::cerr << "IT RECEIVED"  << std::endl;
+    if (n < 0){
+      perror("RECVFROM...");
+    }
+    p = Packet(buffer, n);
+
+
+
+          //////////////////////////////
+    if (p.flags == 6 || p.flags == 4){  //just established the connection
+    //now we read the file and send and such
+      std::cerr << "FLAG 4 or 6"  << std::endl;
+
+      args.seq_num = p.ack_num;
+      args.ack_num = p.seq_num + 1;
+      args.flags = 4;
+      memcpy(&args.payload, buffer, read_bytes);
+      args.size = 12 + read_bytes;
+      p = Packet(args);
+      p.to_uint32_string(send_pack); //so now send_pack is what we're sending
+      if (sendto(sock, send_pack, p.size(), 0, (struct sockaddr *) &(server), length) < 0){ //SENDING IT HERE
+        perror("sending payload packet to server");
+      }
+      args.seq_num = p.ack_num;
+      args.ack_num = p.seq_num + 1;
+      args.flags = 4;
+      input.close();
+      goto startsending;
+    }//end of flag 4 / 6
+
+      else if (p.flags == 1){  //finishing up
+        std::cerr << "FLAG 001"  << std::endl;
+        break;
+      }
+
+    
+
+
+
     if (read_bytes > 0){//if valid
-      args.seq_num = c.client_seq_num;
-      args.ack_num = 0;
-      args.flags = 0;
+      
       memcpy(&args.payload, read_buff, read_bytes);
-      std::cerr << "printing args.payload, before the it becomes Packet p" << std::endl;
-      std::cerr << args.payload << std::endl;
       args.size = 12 + read_bytes;
       Packet p = Packet(args);
-      std::cerr << args.payload << std::endl;
-      std::cerr << p.payload << std::endl;
 
+
+      //SENDING
       p.to_uint32_string(send_pack); //so now send_pack is what we're sending
       std::cerr << send_pack << std::endl;
-      if (sendto(sock, send_pack, p.size(), 0, (struct sockaddr *) &(server), length) < 0){
+      if (sendto(sock, send_pack, p.size(), 0, (struct sockaddr *) &(server), length) < 0){ //SENDING IT HERE
         perror("sending payload packet to server");
       }
 
-      //c.client_seq_num += read_bytes;
-			//c.client_seq_num %= (MAX_NUM+1);
-    }
-  }
+      
+      //now we have to wait to receive it again
+      n = recvfrom(sock,buffer,524,0,(struct sockaddr *) &from, &length);
+      if (n < 0){
+      perror("RECVFROM...");
+      }
+      p = Packet(buffer, n);
+
+      }
+
+
+
+    }//end of while
+  }//end of main
 
 
 
 
-/*
+  /*
   while (true){
     memset(buffer, '\0', sizeof(buffer));
     int bytes_send = input.read(buffer, sizeof(buffer)).gcount(); //buffer contains the contents within the txt file
@@ -217,9 +300,8 @@ int main (int argc, char *argv[]){
      perror("RECVFROM...");
     }
   }
-*/
-  input.close();
-
+  */
+  //nput.close();
 
   
   //SENDING MESSAGE 
@@ -245,7 +327,7 @@ int main (int argc, char *argv[]){
   */
   
 
-}
+ //end of main
 
 
 
@@ -255,13 +337,11 @@ void error (char *msg){
   exit(0);
 }
 
-void sig_quit_handler(int s)
-{
+void sig_quit_handler(int s){
     exit(0);
 }
 
-void sig_term_handler(int s)
-{
+void sig_term_handler(int s){
     exit(0);
 }
 

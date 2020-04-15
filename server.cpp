@@ -26,6 +26,7 @@ bool fileExists (const std::string& name) {
   struct stat buffer;
   return (stat (name.c_str() + 1, &buffer) == 0);
 }
+
 //create the packet from the buffer
 //set the sequence and acknowledgment number based on the number of bytes
 Packet::Packet(const uint8_t buffer[MAX_PACKET_SIZE], int packet_size) : size_(packet_size) {
@@ -79,6 +80,7 @@ void Packet::to_uint32_string(uint8_t (&buf)[MAX_PACKET_SIZE]) {
 
 
 PacketArgs args;
+uint8_t send_pack [MAX_PACKET_SIZE];
 
 //MAIN
 int main (int argc, char *argv[]){ //argv[1] is port num argv[2] is directory to save files
@@ -157,16 +159,21 @@ int main (int argc, char *argv[]){ //argv[1] is port num argv[2] is directory to
     if (n < 0){
       perror("RECVFROM...");
     }
-    std::cerr << "im printing out buffer right after we get it"  << std::endl;
-    std::cerr << buffer  << std::endl;
 
+    std::cerr << "im printing out buffer right after we get it"  << std::endl;
+    std::cerr << buffer  << std::endl; //this doesnt seem to work
+
+    
     Packet p = Packet(buffer, n);
+    memcpy(args.payload, p.payload, p.payload_size());
+
 
     //p.payload has the content within the package we are looking for!!!!!!!!!!!!!!!!!!!!!
-    std::cerr << p.payload  << std::endl;
-
-
-
+    //std::cerr << p.payload  << std::endl;
+    //std::cerr << args.payload  << std::endl;
+    
+    
+    
 
 
     //once it receives the packet we have to verify first
@@ -175,6 +182,133 @@ int main (int argc, char *argv[]){ //argv[1] is port num argv[2] is directory to
     //if it's good
       //we edit the packet and send back the header
       //goto beginning of the loop
+    std::cerr << "received p.seq " << p.seq_num << std::endl;
+    std::cerr << "received p.ack " << p.ack_num << std::endl;
+    std::cerr << "received p.conn_id " << p.conn_id << std::endl;
+    std::cerr << "received p.flags " << p.flags  << std::endl;
+   
+
+/*
+    //ASF SO 100 MEANS ACK, 110 = ACK, SEQ  001 = FIN
+    //SYN
+    if (p.flags == 2){//then it's trying to syn at first
+      std::cerr << "FLAG 010"  << std::endl;
+      //packetargs args is what we will be sending back
+      args.seq_num = 4321;
+      args.ack_num = p.seq_num + 1;
+      args.conn_id = 1;
+      args.flags = 110;
+      //int psize = p.payload_size;
+
+
+      //THIS IS WHERE WE WRITE TO THE FILE///////////////////////////////
+      bool contains = false;
+      int count = 0;
+      for (int i = 0; i < 511; i++){
+        if (p.payload[i] == '\0'){
+          count = i;  //counts has the index where the null starts
+          contains = true;
+          //goto startlisten;
+        }
+      }
+
+      //IF THE PACKET IS VALID, WE WRITE IT OUT TO THE FILE
+      if (contains){
+        writef.write((char*)p.payload, p.payload_size());
+        memset(p.payload, '\0', sizeof(p.payload));
+        writef.close();
+        std::cerr << "IT SHOULD WRITE IF YOU SEE THIS"  << std::endl;
+        break;
+      }
+      else if (!contains){
+        writef.write((char*)p.payload, sizeof(p.payload));
+        memset(p.payload, '\0', sizeof(p.payload));
+      }
+      //THIS IS WHERE WE WRITE TO THE FILE///////////////////////////////
+
+
+      p = Packet (args);//pack it up then send it
+      p.to_uint32_string(send_pack); //so now send_pack is what we're sending
+      if (sendto(sock, send_pack, p.size(), 0, (struct sockaddr *) &(server), length) < 0){ //SENDING IT HERE
+          perror("sending payload packet to server");
+      }
+      std::cerr << "goes to startlisten"  << std::endl;
+      goto startlisten;
+    }//end of 010 situation
+    */
+    
+    
+    //ACK
+    //when we receive 2, we need to establish the connection and send back.
+    if (p.flags == 2){//then it's trying to ack, just send data
+      std::cerr << "FLAG 010"  << std::endl;
+
+      //packetargs args is what we will be sending back
+      //p.ack has 4322
+      //p.seq has 12346
+
+      //server needs to have
+      //seq = 4322
+      //ack = 12347
+      args.seq_num = p.ack_num;
+      args.ack_num = p.seq_num + 1;
+      args.conn_id = 1;
+      args.flags = 6;
+      
+      /*
+      //when it gets the final flag, that is only when we write special amount
+      //////////////////////////////THIS IS WHERE WE WRITE TO THE FILE///////////////////////////////
+      bool contains = false;
+      int count = 0;
+      for (int i = 0; i < 512; i++){
+        if (p.payload[i] == '\0'){
+          count = i;  //counts has the index where the null starts
+          contains = true;
+          //goto startlisten;
+        }
+      }
+      //IF THE PACKET IS VALID, WE WRITE IT OUT TO THE FILE
+      if (contains){
+        writef.write((char*)p.payload, p.payload_size());
+        writef.close();
+        std::cerr << "IT SHOULD WRITE IF YOU SEE THIS"  << std::endl;
+        break;
+      }
+      else if (!contains){
+        writef.write((char*)p.payload, sizeof(p.payload));
+      }
+      ///////////////////////////THIS IS WHERE WE WRITE TO THE FILE///////////////////////////////
+      */
+
+      p = Packet (args);//pack it up then send it
+      p.to_uint32_string(send_pack); //so now send_pack is what we're sending
+      if (sendto(sock, send_pack, p.size(), 0, (struct sockaddr *) &(server), length) < 0){ //SENDING IT HERE
+          perror("sending payload packet to server");
+      }
+      std::cerr << "SENT BACK WITH FLAG 6 TO START"  << std::endl;
+      goto startlisten;
+    }//end of 2, 010
+
+    else if (p.flags == 4){//
+      std::cerr << "FLAG 100"  << std::endl;
+      std::cerr << "IT SHOULD WRITE IF YOU SEE THIS"  << std::endl;
+      writef.write((char*)p.payload, sizeof(p.payload));
+    }
+
+    else if (p.flags == 1){//then it's done sending
+      std::cerr << "FLAG 100"  << std::endl;
+      //then we know the position of the first null character 
+      //then we write a special amount to the file then
+
+    }
+
+
+
+    //we gotta pack it up and go
+
+
+
+
 
 
 
@@ -183,6 +317,13 @@ int main (int argc, char *argv[]){ //argv[1] is port num argv[2] is directory to
 
 
 
+
+
+
+
+
+    /*
+    //THIS IS AFTER CHECKING PACKET IS VALID
     //checks if buff has null
     bool contains = false;
     int count = 0;
@@ -190,38 +331,25 @@ int main (int argc, char *argv[]){ //argv[1] is port num argv[2] is directory to
       if (p.payload[i] == '\0'){
         count = i;  //counts has the index where the null starts
         contains = true;
-        break;
+        goto startlisten;
       }
     }
-
-      //if it contains null, then we write special amount instead
+    //IF THE PACKET IS VALID, WE WRITE IT OUT TO THE FILE
     if (contains){
       writef.write((char*)p.payload, count);
-/*
-      uint8_t wbuff[count];
-      std::cerr << count << "THIS IS COUNT" << std::endl;
-      int i = 0;
-      for (i = 0; i < count; i++){
-        wbuff[i] = p.payload[i];
-      }
-      std::cerr << "RIGHT BEFORE IT USES WRITEF IN CONTAINS SECTION" << std::endl;
-      writef.write((char*)p.payload, sizeof(p.payload)); //this actually writes it out to the file, originally its (char*)wbuff, sizeof(wbuff)
-      memset(p.payload, '\0', sizeof(p.payload)); //clears it after
-      std::cout << "File received! \n";
-      goto startlisten;
-      
-      writef.close();
-      */
       writef.close();
       break;
     }
     else if (!contains){
-      
       writef.write((char*)p.payload, sizeof(p.payload));
     }
+    */
+
+  }//end of while 1
 
 
-  }
+
+
 
 /*
   //RECEIVE MESSAGE
