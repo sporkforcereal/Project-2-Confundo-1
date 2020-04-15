@@ -39,7 +39,7 @@ public:
     
     int size() const {return size_;}
     int payload_size() const {return payload_size_;}
-    void to_uint32_string(uint8_t (&buf)[MAX_PACKET_SIZE]) const;
+    void to_uint32_string(uint8_t (&buf)[MAX_PACKET_SIZE]);
     bool is_valid() const {return valid_;}
 
 private:

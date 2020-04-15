@@ -12,6 +12,17 @@
 #include <iostream>
 #include <fstream>
 
+struct Connection {
+
+	FILE* fd;
+	uint16_t id;
+	uint32_t client_seq_num;
+	uint32_t server_seq_num;
+	uint32_t cwnd;
+	uint32_t ssthresh;
+}c;
+
+PacketArgs args;
 
 void error (char *msg);
 void sig_quit_handler(int s);
@@ -54,7 +65,7 @@ Packet::Packet(const PacketArgs& args) : size_(args.size) {
 	}
 }
 
-void Packet::to_uint32_string(uint8_t (&buf)[MAX_PACKET_SIZE]) const {
+void Packet::to_uint32_string(uint8_t (&buf)[MAX_PACKET_SIZE]) {
 	uint32_t val = htonl(seq_num);
 	// std::cout << seq_num << " " << val << "\n";
 	memcpy(buf, &val, 4);
@@ -86,8 +97,8 @@ int main (int argc, char *argv[]){
   struct sockaddr_in server;
   struct sockaddr_in from;
   struct hostent *hp;
-  char buffer[512];
-
+  //char buffer[512];
+  uint8_t buffer[512];
 
   if (argc < 3){
     fprintf(stderr, "ERROR, NOT ENOUGH ARGUMENT. IT SHOULD BE:\n");
@@ -122,12 +133,61 @@ int main (int argc, char *argv[]){
   //WE READ THE FILE, PUT IN THE THE PACKET, SEND 
   //the 512th byte in the buffer is set to be \0, only read 511
   std::ifstream input(file_name, std::ios::binary);
+  FILE * file;
+  file = fopen(file_name.c_str(), "r");
+
 
   if (!input.is_open())
     {
         std::cerr << "ERROR: cannot open the file" << std::endl;
         exit(EXIT_FAILURE);
     }
+
+
+  //std::cerr << "LINE 144" << std::endl;
+  //THIS PART ACTUALLY MANAGES ACK, SYNC, AND SENDS THE MESSAGE, ALSO WAITS FOR ACK  
+  while (1){
+    uint8_t read_buff [MAX_PAYLOAD_SIZE];
+    uint8_t send_pack [MAX_PACKET_SIZE];
+    std::cerr << "before reading the file" << std::endl;
+    int read_bytes = fread(read_buff, sizeof(char), MAX_PAYLOAD_SIZE, file);//it was c.fd for the last parameter
+    std::cerr << "HOW MANY BYTES I READ IN" << std::endl;
+    std::cerr << read_bytes << std::endl;
+    if (read_bytes < 0) {
+      perror("reading payload file");
+			//report_error("reading payload file", true, 1);
+      break;
+			}
+		if (read_bytes == 0) {
+			break; // No payload to send
+		}
+    if (read_bytes > 0){//if valid
+      args.seq_num = c.client_seq_num;
+      args.ack_num = 0;
+      args.flags = 0;
+      memcpy(&args.payload, read_buff, read_bytes);
+      std::cerr << "printing args.payload, before the it becomes Packet p" << std::endl;
+      std::cerr << args.payload << std::endl;
+      args.size = 12 + read_bytes;
+      Packet p = Packet(args);
+      std::cerr << args.payload << std::endl;
+      std::cerr << p.payload << std::endl;
+
+      p.to_uint32_string(send_pack); //so now send_pack is what we're sending
+      std::cerr << send_pack << std::endl;
+      if (sendto(sock, send_pack, p.size(), 0, (struct sockaddr *) &(server), length) < 0){
+        perror("sending payload packet to server");
+      }
+
+      //c.client_seq_num += read_bytes;
+			//c.client_seq_num %= (MAX_NUM+1);
+    }
+  }
+
+
+
+
+/*
   while (true){
     memset(buffer, '\0', sizeof(buffer));
     int bytes_send = input.read(buffer, sizeof(buffer)).gcount(); //buffer contains the contents within the txt file
@@ -137,23 +197,27 @@ int main (int argc, char *argv[]){
 
     
     std::cerr << buffer;  //so buffer has the content in text file
+
+    //currently the content is in buffer
+    //needs to put the buffer in a packet with a header
+    //than we can send it
+    //PacketArgs package(buffer, (int)sizeof(buffer));
+
+
     //sends the first 512
     n = sendto(sock, buffer,strlen(buffer),0,(struct sockaddr *) &server, length);
     if (n < 0){
      perror("SENDTO...");
     }
-    
+
     //receves what the server sends back
     n = recvfrom(sock,buffer,512,0,(struct sockaddr *) &from, &length);
     
     if (n < 0){
      perror("RECVFROM...");
     }
-    
-
-
-
   }
+*/
   input.close();
 
 

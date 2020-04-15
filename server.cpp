@@ -1,106 +1,3 @@
-/*
-
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <string.h>
-#include <stdio.h>
-#include <errno.h>
-#include <signal.h>
-#include <fcntl.h>
-#include <iostream>
-#include <sstream>
-#include <fstream>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <thread>
-#include <cstring>
-#include <deque>
-#include <memory>
-#include <map>
-
-//this is from geektogeek
-#include <stdio.h> 
-#include <stdlib.h> 
-#include <unistd.h> 
-#include <string.h> 
-#include <sys/types.h> 
-#include <sys/socket.h> 
-#include <arpa/inet.h> 
-#include <netinet/in.h> 
-
-
-using std::cerr;
-using std::cout;
-using std::deque;
-using std::endl;
-using std::fstream;
-using std::ios;
-using std::map;
-using std::ofstream;
-using std::shared_ptr;
-
-
-
-void sig_quit_handler(int s)
-{
-    exit(0);
-}
-
-void sig_term_handler(int s)
-{
-    exit(0);
-}
-
-
-int main()
-{
-  signal(SIGQUIT, sig_quit_handler);
-  signal(SIGTERM, sig_term_handler);
-
-
-  std::cerr << "server is not implemented yet" << std::endl;
-
-}
-
-
-
-
-#include <stdio.h>
-#include <string.h>
-#include <fcntl.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-  
-
-
-         
-int main(int argc, char **argv)
-{
-    int sockfd;
-    struct sockaddr_in servaddr, cliaddr;
-
-    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    bzero(&servaddr, sizeof(servaddr));
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    servaddr.sin_port = htons(SERV_PORT);
-
-    bind(sockfd, (struct sockaddr *) &servaddr, sizeof(servaddr));
-
-    run(sockfd, (struct sockaddr *) &cliaddr, sizeof(cliaddr));
-
-    return 0;
-}
-
-
-*/
-
-
-//YOUTUBE METHOD
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
@@ -119,30 +16,69 @@ void error (char *msg){
   perror(msg);
   exit(0);
 }
-
-void sig_quit_handler(int s)
-{
+void sig_quit_handler(int s){
     exit(0);
 }
-
-void sig_term_handler(int s)
-{
+void sig_term_handler(int s){
     exit(0);
 }
-
 bool fileExists (const std::string& name) {
   struct stat buffer;
   return (stat (name.c_str() + 1, &buffer) == 0);
 }
+//create the packet from the buffer
+//set the sequence and acknowledgment number based on the number of bytes
+Packet::Packet(const uint8_t buffer[MAX_PACKET_SIZE], int packet_size) : size_(packet_size) {
+	if (size_ < HEADER_SIZE) valid_ = false;
+	else {
+		payload_size_ = size_ - HEADER_SIZE;
 
-/*
-//checks if the file exists
-bool fileExists (const std::string& name) {
-  struct stat buffer;
-  return (stat (name.c_str() + 1, &buffer) == 0);
+		memcpy(&seq_num, buffer, 4);
+		memcpy(&ack_num, buffer+4, 4);
+		seq_num = ntohl(seq_num);
+		ack_num = ntohl(ack_num);
+
+		uint32_t id_flags;
+		memcpy(&id_flags, buffer+8, 4);
+		id_flags = ntohl(id_flags);
+		conn_id = id_flags >> 16;
+		flags = id_flags;
+
+		memcpy(&payload, buffer+12, payload_size_);
+	}
 }
-*/
+//Parse the packet
+Packet::Packet(const PacketArgs& args) : size_(args.size) {
+	if (size_ < HEADER_SIZE) valid_ = false;
+	else {
+		payload_size_ = size_ - HEADER_SIZE;
 
+		seq_num = args.seq_num;
+		ack_num = args.ack_num;
+		conn_id = args.conn_id;
+		flags = args.flags;
+		memcpy(&payload, &args.payload, payload_size_);
+	}
+}
+
+void Packet::to_uint32_string(uint8_t (&buf)[MAX_PACKET_SIZE]) {
+	uint32_t val = htonl(seq_num);
+	// std::cout << seq_num << " " << val << "\n";
+	memcpy(buf, &val, 4);
+
+	val = htonl(ack_num);
+	memcpy(buf+4, &val, 4);
+
+	val = htonl(((uint32_t)conn_id << 16) + flags);
+	memcpy(buf+8, &val, 4);
+
+	memcpy(buf+12, payload, payload_size_);
+}
+
+
+
+
+PacketArgs args;
 
 //MAIN
 int main (int argc, char *argv[]){ //argv[1] is port num argv[2] is directory to save files
@@ -151,12 +87,10 @@ int main (int argc, char *argv[]){ //argv[1] is port num argv[2] is directory to
   signal(SIGTERM, sig_term_handler);
 
 
-  char buffer[512];
+  //char buffer[524];
+  uint8_t buffer[524];
   std::string dirname = argv[2]; //takes in the /save
   
-
-
-
   
   //CONNECTION HANDLE PART
   int port = atoi(argv[1]);
@@ -188,16 +122,7 @@ int main (int argc, char *argv[]){ //argv[1] is port num argv[2] is directory to
     perror("BINDING...");
   }
   fromlen = sizeof(struct sockaddr_in);
-
-
-/*
-  //MAKE A DIRECTORY TO SAVE THE FILE
-  const int dir_err = mkdir(argv[2], 0777);
-    if (-1 == dir_err)
-    {
-        printf("Error creating directory!n");
-    }
-*/
+  //END OF CONNECTION HANDLE
 
 
   //makes a directory name save, not /save
@@ -226,18 +151,43 @@ int main (int argc, char *argv[]){ //argv[1] is port num argv[2] is directory to
   std::ofstream writef(fullfile.c_str() + 1, std::ios::binary);
 
   while (1){
+    startlisten:
     memset(buffer, '\0', sizeof(buffer));
-    n = recvfrom(sock,buffer,512,0,(struct sockaddr *)&from,&fromlen);
+    n = recvfrom(sock,buffer,524,0,(struct sockaddr *)&from,&fromlen);
     if (n < 0){
       perror("RECVFROM...");
     }
-    std::cerr << buffer;
+    std::cerr << "im printing out buffer right after we get it"  << std::endl;
+    std::cerr << buffer  << std::endl;
+
+    Packet p = Packet(buffer, n);
+
+    //p.payload has the content within the package we are looking for!!!!!!!!!!!!!!!!!!!!!
+    std::cerr << p.payload  << std::endl;
+
+
+
+
+
+    //once it receives the packet we have to verify first
+
+
+    //if it's good
+      //we edit the packet and send back the header
+      //goto beginning of the loop
+
+
+
+    //if it's bad, assume the first packet client send is always good.
+      //i send back what ack and syc im expecting
+
+
 
     //checks if buff has null
     bool contains = false;
     int count = 0;
     for (int i = 0; i < 512; i++){
-      if (buffer[i] == '\0'){
+      if (p.payload[i] == '\0'){
         count = i;  //counts has the index where the null starts
         contains = true;
         break;
@@ -246,24 +196,28 @@ int main (int argc, char *argv[]){ //argv[1] is port num argv[2] is directory to
 
       //if it contains null, then we write special amount instead
     if (contains){
-      char wbuff[count];
+      writef.write((char*)p.payload, count);
+/*
+      uint8_t wbuff[count];
+      std::cerr << count << "THIS IS COUNT" << std::endl;
       int i = 0;
       for (i = 0; i < count; i++){
-        wbuff[i] = buffer[i];
+        wbuff[i] = p.payload[i];
       }
-      std::cout << "RIGHT BEFORE IT USES WRITEF";
-      writef.write(wbuff, sizeof(wbuff)); //this actually writes it out to the file
-      memset(buffer, '\0', sizeof(buffer)); //clears it after
+      std::cerr << "RIGHT BEFORE IT USES WRITEF IN CONTAINS SECTION" << std::endl;
+      writef.write((char*)p.payload, sizeof(p.payload)); //this actually writes it out to the file, originally its (char*)wbuff, sizeof(wbuff)
+      memset(p.payload, '\0', sizeof(p.payload)); //clears it after
       std::cout << "File received! \n";
-      //goto startlisten;
+      goto startlisten;
+      
+      writef.close();
+      */
       writef.close();
       break;
     }
-
-    //if it doesnt contain null, we know that we're not end of the file, so we
-    //write the full buffer into the file
     else if (!contains){
-      writef.write(buffer, sizeof(buffer));
+      
+      writef.write((char*)p.payload, sizeof(p.payload));
     }
 
 
