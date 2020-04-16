@@ -1,5 +1,38 @@
 # CS118 Project 2
 
+
+
+
+
+Juho Jung
+37073388
+
+High level design:
+client will be the first one sending a header
+server will confirm by sending ACK, and SYN
+then the client will start sending each time acknowledging the numbers
+once it sent all of them, it will have a F flag and that's how we finish
+
+the biggest issue with this was the client being able to receive. Unfortunately this is where i had to stop due to running out of time.
+i had it there the client was now able to receive from the server for acknowledgment but somehow the packet i would get back from the server was
+not what i wanted to be. I knew the concept of controlling seq_num, ack_num but couldn't execute in the end.
+To solve the issues, i'd say stackoverflow was the biggest help and this youtube video and helped me understand the basics of UDP
+https://www.youtube.com/watch?v=9g_nMNJhRVk
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Template for for [CSCI3550 Spring 2020 Project 2](https://uno-csci3550.github.io/Project2-Confundo-Description/)
 
 ## Makefile
